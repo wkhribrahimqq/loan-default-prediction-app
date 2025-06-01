@@ -1,98 +1,92 @@
-import streamlit as st
-import numpy as np
+mport streamlit as st
 import pandas as pd
 import joblib
-import os
-import io
+import matplotlib.pyplot as plt
 
-# ===== Page Setup =====
-st.set_page_config(page_title="Loan Default Prediction", page_icon="💳", layout="centered")
-
-# Load models and scaler
+# === Load models ===
 xgb_model = joblib.load('xgboost_model.pkl')
 lgbm_model = joblib.load('lightgbm_model.pkl')
 rf_model = joblib.load('random_forest_model.pkl')
 scaler = joblib.load('scaler.pkl')
 
-# Feature names
-feature_names = ['RevolvingUtilizationOfUnsecuredLines', 'age', 'NumberOfTime30-59DaysPastDueNotWorse',
-                 'DebtRatio', 'MonthlyIncome', 'NumberOfOpenCreditLinesAndLoans', 'NumberOfTimes90DaysLate',
-                 'NumberRealEstateLoansOrLines', 'NumberOfTime60-89DaysPastDueNotWorse', 'NumberOfDependents']
+# === Title Section with Bank Logo and Background ===
+st.markdown(
+    """
+    <div style="background-color:#e8f0fe;padding:20px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:32px;font-weight:bold;">Loan Default Prediction Comparison App</div>
+        <img src="https://img.icons8.com/ios-filled/50/000000/bank.png" width="40"/>
+    </div>
+    """, unsafe_allow_html=True
+)
 
-# ===== Title & Intro =====
-st.markdown("""
-    <h1 style='text-align: center; color: #0A79DF;'>💳 Loan Default Prediction Comparison App</h1>
-    <p style='text-align: center; color: #6c757d;'>Enter the applicant’s data below. This app compares loan default risk using 3 machine learning models.</p>
-""", unsafe_allow_html=True)
+st.markdown(
+    """
+    <div style="margin-top:10px;margin-bottom:20px;color:#333;">
+        Try different feature values to simulate a loan applicant and see predictions across models.
+    </div>
+    """, unsafe_allow_html=True
+)
 
-# ===== Input Form =====
-st.markdown("### 🧾 Applicant Information")
-user_input = []
-for feature in feature_names:
-    val = st.number_input(f"➤ {feature}", min_value=0.0, format="%.2f")
-    user_input.append(val)
+# === Input Panel ===
+with st.expander("Adjust Input Features"):
+    RevolvingUtilizationOfUnsecuredLines = st.slider("Revolving Utilization of Unsecured Lines", 0.0, 1.0, 0.1)
+    age = st.slider("Age", 18, 100, 35)
+    NumberOfTime30_59DaysPastDueNotWorse = st.slider("Number of Times 30-59 Days Past Due Not Worse", 0, 10, 0)
+    DebtRatio = st.slider("Debt Ratio", 0.0, 10.0, 0.5)
+    MonthlyIncome = st.slider("Monthly Income", 0.0, 50000.0, 5000.0)
+    NumberOfOpenCreditLinesAndLoans = st.slider("Number of Open Credit Lines and Loans", 0, 20, 5)
+    NumberOfTimes90DaysLate = st.slider("Number of Times 90 Days Late", 0, 10, 0)
+    NumberRealEstateLoansOrLines = st.slider("Number of Real Estate Loans or Lines", 0, 10, 1)
+    NumberOfTime60_89DaysPastDueNotWorse = st.slider("Number of Times 60-89 Days Past Due Not Worse", 0, 10, 0)
+    NumberOfDependents = st.slider("Number of Dependents", 0, 10, 0)
 
-# ===== Prediction Button =====
-if st.button("📊 Predict"):
-    input_array = np.array(user_input).reshape(1, -1)
-    input_scaled = scaler.transform(input_array)
+# === Predict Button ===
+if st.button("Predict"):
+    input_data = pd.DataFrame([[
+        RevolvingUtilizationOfUnsecuredLines,
+        age,
+        NumberOfTime30_59DaysPastDueNotWorse,
+        DebtRatio,
+        MonthlyIncome,
+        NumberOfOpenCreditLinesAndLoans,
+        NumberOfTimes90DaysLate,
+        NumberRealEstateLoansOrLines,
+        NumberOfTime60_89DaysPastDueNotWorse,
+        NumberOfDependents
+    ]])
 
-    # ===== Model Predictions =====
-    results = []
-    for name, model in [('XGBoost', xgb_model), ('LightGBM', lgbm_model), ('Random Forest', rf_model)]:
-        pred = int(model.predict(input_scaled)[0])
-        proba = round(model.predict_proba(input_scaled)[0][1] * 100, 2)
-        results.append({
-            'Model': name,
-            'Prediction': f"{pred} ({'Default' if pred == 1 else 'No Default'})",
-            'Probability (%)': f"{proba}%"
-        })
+    input_scaled = scaler.transform(input_data)
 
-    results_df = pd.DataFrame(results)
-
-    st.markdown("### 📈 Prediction Results")
-    st.success("✅ Prediction saved to Excel successfully!")
-    st.dataframe(results_df.style.set_properties(**{'text-align': 'center'}))
-
-    # ===== Save to Excel =====
-    prediction_record = {
-        'Input': str(user_input),
-        'XGBoost_Prediction': int(xgb_model.predict(input_scaled)[0]),
-        'XGBoost_Probability': round(xgb_model.predict_proba(input_scaled)[0][1] * 100, 2),
-        'LightGBM_Prediction': int(lgbm_model.predict(input_scaled)[0]),
-        'LightGBM_Probability': round(lgbm_model.predict_proba(input_scaled)[0][1] * 100, 2),
-        'RandomForest_Prediction': int(rf_model.predict(input_scaled)[0]),
-        'RandomForest_Probability': round(rf_model.predict_proba(input_scaled)[0][1] * 100, 2),
+    models = {
+        "XGBoost": xgb_model,
+        "LightGBM": lgbm_model,
+        "Random Forest": rf_model
     }
 
-    df_row = pd.DataFrame([prediction_record])
-    if os.path.exists("prediction_log.xlsx"):
-        df_old = pd.read_excel("prediction_log.xlsx")
-        df_all = pd.concat([df_old, df_row], ignore_index=True)
-    else:
-        df_all = df_row
+    results = []
+    for name, model in models.items():
+        pred = model.predict(input_scaled)[0]
+        prob = model.predict_proba(input_scaled)[0][1] * 100
+        results.append({
+            "Model": name,
+            "Prediction": f"{int(pred)} ({'Default' if pred == 1 else 'No Default'})",
+            "Probability (%)": f"{prob:.2f}%"
+        })
 
-    df_all.to_excel("prediction_log.xlsx", index=False)
+    df_results = pd.DataFrame(results)
 
-    # ===== Excel Download Button =====
-    excel_buffer = io.BytesIO()
-    df_all.to_excel(excel_buffer, index=False, engine='openpyxl')
-    excel_buffer.seek(0)
-    st.download_button(
-        label="📥 Download Excel File",
-        data=excel_buffer,
-        file_name="prediction_log.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:24px;font-weight:bold;'>Prediction Comparison</div>", unsafe_allow_html=True)
+    st.dataframe(df_results)
 
-# ===== Model Performance Table =====
-st.markdown("### 📊 Model Performance Summary")
-df_perf = pd.DataFrame({
-    "Model": ["XGBoost", "LightGBM", "Random Forest"],
-    "Accuracy": [0.935, 0.934, 0.928],
-    "F1-score": [0.30, 0.32, 0.28],
-    "ROC AUC": [0.86, 0.87, 0.84]
-})
-st.dataframe(df_perf.style.set_properties(**{'text-align': 'center'}))
+    # Bar Chart
+    st.markdown("<div style='font-size:22px;font-weight:bold;margin-top:25px;'>Model Probability Comparison</div>", unsafe_allow_html=True)
+    fig, ax = plt.subplots()
+    ax.bar(df_results['Model'], [float(x.strip('%')) for x in df_results['Probability (%)']], color=["#1f77b4", "#ff7f0e", "#2ca02c"])
+    ax.set_ylabel("Probability of Default (%)")
+    ax.set_ylim(0, 100)
+    st.pyplot(fig)
 
-    
+    # CSV download
+    csv = df_results.to_csv(index=False).encode('utf-8')
+    st.download_button("Download CSV", data=csv, file_name='loan_predictions.csv', mime='text/csv')
